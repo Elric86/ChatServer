@@ -14,12 +14,23 @@ public class ChatServer {
     private static int uniqueID;
     private static ServerSocket serverSocket;
     private static int port = 8080;
+    boolean loggedIn = true;
+
+    private ServerGUI sg;
    
     private static ArrayList<ClientThread> list; //Keep track of clients
     private SimpleDateFormat sdf;
     
     public ChatServer(int port) {
-         this.port = port;
+        this(port, null);
+    }
+
+    public ChatServer(int port, ServerGUI sg) {
+        //GUI or not
+        this.sg = sg;
+        this.port = port;
+        sdf = new SimpleDateFormat("HH:mm:ss");
+        list = new ArrayList<ClientThread>();
     }
     
     public void start() {
@@ -45,6 +56,19 @@ public class ChatServer {
             
         } catch (Exception e) {
             System.out.println(e);
+        }
+    }
+
+    public void stop()
+    {
+        loggedIn = false;
+        try
+        {
+            new Socket("localhost", port);
+        }
+        catch (Exception e)
+        {
+            //cry
         }
     }
     
@@ -131,8 +155,8 @@ public class ChatServer {
 
         @Override
         public void run() {
+            loggedIn = true;
             //Keep running until LOGOUT
-            boolean loggedIn = true;
             while(loggedIn) {
                 // read a String (which is an object)
                 try {
