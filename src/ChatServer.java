@@ -13,15 +13,17 @@ import java.text.SimpleDateFormat;
 public class ChatServer {
     private static int uniqueID;
     private static ServerSocket serverSocket;
-    private static int port = 8080;
-    boolean loggedIn = true;
+    private static int port = 8080; //default port number is 8080
+    boolean continueServer = true;
 
     private ServerGUI sg;
    
     private static ArrayList<ClientThread> list; //Keep track of clients
     private SimpleDateFormat sdf;
-    
+
+
     public ChatServer(int port) {
+        //open server with no GUI
         this(port, null);
     }
 
@@ -37,31 +39,53 @@ public class ChatServer {
         try {
             serverSocket = new ServerSocket(port); //Start listening on port
             
-            System.out.println("Web Server running on Inet Address " + serverSocket.getInetAddress()
+            event("Web Server running on Inet Address " + serverSocket.getInetAddress()
                     + " port " + serverSocket.getLocalPort());
             
             //System.out.println("Working Directory: \"" + System.getProperty("user.dir").replace('\\', '/') + "\"");
 
             //Server infinite loop and wait for clients to connect
-            while (true) {
+            while (continueServer) {
                 
                 Socket socket = serverSocket.accept(); //accept client connection
-                System.out.println("Connection accepted " + socket.getInetAddress() + ":" + socket.getPort());
+                event("Connection accepted " + socket.getInetAddress() + ":" + socket.getPort());
                 
                 //Create a new thread and handle the connection
                 ClientThread ct = new ClientThread(socket);
                 list.add(ct); //Save client to ArrayList
                 ct.start();
             }
+            //when server stops
+            try
+            {
+                serverSocket.close();
+                //close all threads
+                for(int i=0; i<list.size(); i++)
+                {
+                    ClientThread tempThread = list.get(i);
+                    try{
+                        tempThread.socket.close();
+                        tempThread.in.close();
+                        tempThread.out.close();
+                    }
+                    catch (IOException ioE){
+
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                event("Exception in closing server and clients: " + e);
+            }
             
         } catch (Exception e) {
-            System.out.println(e);
+            event(sdf.format(new Date()) + " Exception in starting server: " + e);
         }
     }
 
     public void stop()
     {
-        loggedIn = false;
+        continueServer = false;
         try
         {
             new Socket("localhost", port);
@@ -71,31 +95,48 @@ public class ChatServer {
             //cry
         }
     }
+
+    private void event(String msg)
+    {
+        String time = sdf.format(new Date())+ " " + msg;
+        if(sg == null)
+            System.out.println(time);
+        else
+            sg.appendEvent(time + "\n");
+    }
     
     //Broadcast a message to all Clients
+    //TODO: this will need to be changed to handle direct messaging
     private synchronized void broadcast(String message) {
        String time = sdf.format(new Date());
        
        message = time + ": " + message + "\n";
-       System.out.print(message);
+        if(sg == null)
+            System.out.print(message);
+        else
+            sg.appendRoom(message);
 
        // we loop in reverse order in case we would have to remove a Client
-       for(int i = list.size(); i >= 0; --i) {
+       for(int i = list.size()-1; i >= 0; --i) {
             ClientThread ct = list.get(i);
+           System.out.println("Sending a message to client" + i);
             // try to write to the Client if it fails remove it from the list
             if(!ct.writeMsg(message)) {
                 list.remove(i);
-                System.out.print("Disconnected Client: " + ct.username + " removed from list");
+                event("Disconnected Client" + i + " : " + ct.username + " removed from list");
             }
        }
     }
+
 
     // for a client who logoff using the LOGOUT message
     synchronized void remove(int id) {
         // scan the array list until we found the Id
         for(int i = 0; i < list.size(); ++i) {
-            if(list.get(i).id == id) {
+            ClientThread ct = list.get(i);
+            if(ct.id == id) {
                 list.remove(i);
+                event("Disconnected Client" + i + " : " + ct.username + " removed from list");
                 return;
             }
         }
@@ -143,10 +184,10 @@ public class ChatServer {
                 
                 // read the username
                 username = (String) in.readObject();
-                System.out.println(username + " has connected");
+                event(username + " has connected");
                 
             } catch (IOException e) {
-                System.out.println("Exception creating new Input/output Streams: " + e);
+                event("Exception creating new Input/output Streams: " + e);
                 return;
             } catch (ClassNotFoundException e) {}
 
@@ -155,14 +196,14 @@ public class ChatServer {
 
         @Override
         public void run() {
-            loggedIn = true;
+            boolean loggedIn = true;
             //Keep running until LOGOUT
             while(loggedIn) {
                 // read a String (which is an object)
                 try {
                     cm = (ChatMessage) in.readObject();
                 } catch (IOException e) {
-                    System.out.println(username + " Exception reading Streams: " + e);
+                    event(username + " Exception reading Streams: " + e);
                     break;			
                 } catch(ClassNotFoundException e2) {
                     break;
@@ -177,12 +218,12 @@ public class ChatServer {
                     broadcast(username + ": " + message);
                     break;
                 case ChatMessage.LOGOUT:
-                    System.out.println(username + " disconnected with a LOGOUT message.");
+                    event(username + " disconnected with a LOGOUT message.");
                     loggedIn = false;
                     break;
                 case ChatMessage.WHOISIN:
                     writeMsg("List of the users connected at " + sdf.format(new Date()) + "\n");
-                    // scan al the users connected
+                    // scan all the users connected
                     for(int i = 0; i < list.size(); ++i) {
                         ClientThread ct = list.get(i);
                         writeMsg((i+1) + ") " + ct.username + " since " + ct.date);
@@ -225,8 +266,8 @@ public class ChatServer {
                 out.writeObject(msg);
             } catch(IOException e) {
                 // if an error occurs, do not abort just inform the user
-                System.out.println("Error sending message to " + username);
-                System.out.println(e.toString());
+                event("Error sending message to " + username);
+                event(e.toString());
             }
             
             return true;
